@@ -1,7 +1,6 @@
 {
   "name": "Coffee Tycoon",
   "short_name": "CoffeeTycoon",
-  "description": "Grow beans. Roast perfection. Brew magic. Build your coffee empire!",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
