@@ -597,17 +597,23 @@ function renderPixi(dt) {
 function handleCanvasClick(e) {
   if (!G.started || G.activeTab !== "farm") return;
 
-  const rect = pixiApp.canvas.getBoundingClientRect();
-  const scaleX = pixiApp.screen.width / rect.width;
-  const scaleY = pixiApp.screen.height / rect.height;
-  const mx = (e.clientX - rect.left) * scaleX;
-  const my = (e.clientY - rect.top) * scaleY;
+  // Get pointer position - handle both mouse and touch
+  const clientX = e.clientX ?? e.touches?.[0]?.clientX;
+  const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+  if (clientX == null) return;
 
-  for (const spr of plotSprites) {
+  const rect = pixiApp.canvas.getBoundingClientRect();
+
+  // With autoDensity: true, pixiApp.screen is in CSS pixels
+  // so we map from bounding rect to screen coords
+  const mx = (clientX - rect.left) / rect.width * pixiApp.screen.width;
+  const my = (clientY - rect.top) / rect.height * pixiApp.screen.height;
+
+  for (let i = 0; i < plotSprites.length; i++) {
+    const spr = plotSprites[i];
     if (!spr.visible || !spr._isReady) continue;
-    const { _hitX: hx, _hitY: hy, _hitW: hw, _hitH: hh, _plotId: pid } = spr;
+    const hx = spr._hitX, hy = spr._hitY, hw = spr._hitW, hh = spr._hitH, pid = spr._plotId;
     if (mx >= hx && mx <= hx + hw && my >= hy && my <= hy + hh) {
-      // Pick this cherry!
       const plot = G.plots.find(p => p.id === pid);
       if (plot) {
         plot.stage = 0;
@@ -616,10 +622,8 @@ function handleCanvasClick(e) {
         G.rawBeans++;
         G.totalPicked++;
         spawnParticle(hx + hw / 2, hy + hh / 2, 0xE53935, 5);
-
-        // Float
         G.floats.push({
-          id: uid(), x: e.clientX, y: e.clientY,
+          id: uid(), x: clientX, y: clientY,
           text: "+1 🫘", color: "#E53935", life: 900,
         });
       }
@@ -632,8 +636,21 @@ function handleCanvasClick(e) {
 // DOM HUD RENDERING
 // ─────────────────────────────────────────
 let hudRafId = null;
+let lastHudRender = 0;
+const HUD_INTERVAL = 250; // render DOM at 4fps, not 60
 
 function renderHUD() {
+  const now = performance.now();
+  if (now - lastHudRender >= HUD_INTERVAL) {
+    lastHudRender = now;
+    doRenderHUD();
+  }
+  // Floats need smooth updates
+  renderFloats();
+  hudRafId = requestAnimationFrame(renderHUD);
+}
+
+function doRenderHUD() {
   // Money
   document.getElementById("hud-money").textContent = `💰 ${fmt(G.money)}`;
 
@@ -655,16 +672,11 @@ function renderHUD() {
   // Active panel content
   renderActivePanel();
 
-  // Floats
-  renderFloats();
-
   // Achievement popup
   renderAchPopup();
 
   // Notification
   renderNotification();
-
-  hudRafId = requestAnimationFrame(renderHUD);
 }
 
 function renderActivePanel() {
@@ -814,7 +826,7 @@ function renderShopPanel() {
       const drink = DRINKS[c.drinkIdx];
       const canServe = G.brewedCups >= drink.cups;
       const pColor = c.patience > 60 ? 'var(--green)' : c.patience > 30 ? '#fbbf24' : 'var(--red)';
-      html += `<div class="customer-card ${canServe ? 'servable' : ''}" onclick="${canServe ? `serveCustomer(${c.id}, event)` : ''}">
+      html += `<div class="customer-card ${canServe ? 'servable' : ''}" data-cust-id="${c.id}">
         <span class="customer-emoji">${c.look.emoji}</span>
         <div class="customer-info">
           <div class="customer-name">${c.look.name}${c.tipMult > 1 ? ' ✨' : ''}</div>
@@ -993,8 +1005,21 @@ async function init() {
 
   await initPixi();
 
-  // Canvas click handler
+  // Canvas click handler — both pointer and touch for max compatibility
   pixiApp.canvas.addEventListener("pointerdown", handleCanvasClick);
+  pixiApp.canvas.addEventListener("touchstart", (e) => {
+    e.preventDefault(); // prevent double-fire with pointerdown
+    handleCanvasClick(e);
+  }, { passive: false });
+
+  // Shop panel — event delegation for customer clicks
+  document.getElementById("panel-shop").addEventListener("click", (e) => {
+    const card = e.target.closest('.customer-card[data-cust-id]');
+    if (!card) return;
+    const custId = parseInt(card.dataset.custId);
+    if (isNaN(custId)) return;
+    serveCustomer(custId, e);
+  });
 
   // Tab buttons
   document.querySelectorAll('.tab-btn').forEach(btn => {
