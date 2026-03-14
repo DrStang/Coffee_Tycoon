@@ -1,4 +1,4 @@
-const CACHE_NAME = 'coffee-tycoon-v1';
+const CACHE_NAME = 'coffee-tycoon-v2';
 const ASSETS = [
   '/',
   '/index.html',
